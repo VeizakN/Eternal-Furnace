@@ -150,25 +150,61 @@ public final class ModGameTests {
         furnace.setItem(1, new ItemStack(Items.COAL));
         AbstractFurnaceAccessor accessor = (AbstractFurnaceAccessor) furnace;
 
-        helper.runAtTickTime(5, () -> {
-            helper.assertTrue(furnace.getItem(1).isEmpty(), "Coal was not consumed as ordinary fuel");
-            helper.assertTrue(accessor.eternalFurnace$getLitTotalTime() > HELLFIRE_BURN_TIME_TICKS,
-                    "Coal did not start an ordinary burn");
-            helper.setBlock(HEAT_POS, ModBlocks.HELLFIRE_NETHERRACK.get());
-            accessor.eternalFurnace$setLitTimeRemaining(4);
-        });
-        helper.runAtTickTime(6, () -> {
-            helper.assertTrue(accessor.eternalFurnace$getCookingTotalTime() == 200, "Hellfire interrupted fuel that was still burning");
-            helper.assertTrue(accessor.eternalFurnace$getLitTotalTime() > HELLFIRE_BURN_TIME_TICKS,
-                    "Hellfire replaced active fuel too early");
-        });
-        helper.succeedWhen(() -> {
-            helper.assertTrue(accessor.eternalFurnace$getLitTotalTime() == HELLFIRE_BURN_TIME_TICKS,
-                    "Hellfire did not take over when coal ended");
-            helper.assertTrue(accessor.eternalFurnace$getCookingTotalTime() == 360, "Hellfire timing was not applied after coal ended");
-            helper.assertTrue(accessor.eternalFurnace$getCookingTimer() >= 8, "Progress reset when Hellfire took over");
-            helper.assertTrue(furnace.getItem(1).isEmpty(), "Hellfire created or retained consumed fuel");
-        });
+        helper.startSequence()
+                .thenWaitUntil(() -> helper.assertTrue(accessor.eternalFurnace$getLitTimeRemaining() > 0,
+                        "Coal has not started burning yet"))
+                .thenExecute(() -> {
+                    helper.assertTrue(furnace.getItem(1).isEmpty(), "Coal was not consumed as ordinary fuel");
+                    helper.assertTrue(accessor.eternalFurnace$getLitTotalTime() > HELLFIRE_BURN_TIME_TICKS,
+                            "Coal did not start an ordinary burn");
+                    helper.assertTrue(accessor.eternalFurnace$getCookingTotalTime() == 200,
+                            "Ordinary fuel did not use vanilla timing");
+                    helper.assertTrue(accessor.eternalFurnace$getCookingTimer() > 0,
+                            "Ordinary fuel did not start cooking");
+                    helper.assertTrue(helper.getBlockState(FURNACE_POS).getValue(AbstractFurnaceBlock.LIT),
+                            "Ordinary fuel did not visually light the furnace");
+                    helper.setBlock(HEAT_POS, ModBlocks.HELLFIRE_NETHERRACK.get());
+                    // Shorten a proven coal burn, rather than waiting for all 1600 ticks.
+                    accessor.eternalFurnace$setLitTimeRemaining(4);
+                    accessor.eternalFurnace$setCookingTimer(50);
+                })
+                .thenWaitUntil(() -> helper.assertTrue(accessor.eternalFurnace$getLitTimeRemaining() < 4,
+                        "The active coal burn has not ticked yet"))
+                .thenExecute(() -> {
+                    helper.assertTrue(accessor.eternalFurnace$getLitTimeRemaining() == 3,
+                            "Hellfire changed the active coal burn timer");
+                    helper.assertTrue(accessor.eternalFurnace$getCookingTotalTime() == 200,
+                            "Hellfire interrupted fuel that was still burning");
+                    helper.assertTrue(accessor.eternalFurnace$getLitTotalTime() > HELLFIRE_BURN_TIME_TICKS,
+                            "Hellfire replaced active fuel too early");
+                    helper.assertTrue(accessor.eternalFurnace$getCookingTimer() == 51,
+                            "Ordinary fuel did not preserve cooking progress");
+                })
+                .thenWaitUntil(() -> helper.assertTrue(accessor.eternalFurnace$getLitTimeRemaining() <= 1,
+                        "The active coal burn has not reached its last effective tick"))
+                .thenExecute(() -> {
+                    helper.assertTrue(accessor.eternalFurnace$getLitTotalTime() > HELLFIRE_BURN_TIME_TICKS,
+                            "Hellfire took over before the last ordinary fuel tick finished");
+                    helper.assertTrue(accessor.eternalFurnace$getCookingTotalTime() == 200,
+                            "Hellfire changed timing before ordinary fuel finished");
+                    helper.assertTrue(accessor.eternalFurnace$getCookingTimer() == 53,
+                            "Ordinary fuel lost progress before the handoff");
+                })
+                .thenWaitUntil(() -> helper.assertTrue(
+                        accessor.eternalFurnace$getLitTotalTime() == HELLFIRE_BURN_TIME_TICKS,
+                        "Hellfire did not take over when coal ended"))
+                .thenExecute(() -> {
+                    helper.assertTrue(accessor.eternalFurnace$getCookingTotalTime() == 360,
+                            "Hellfire timing was not applied after coal ended");
+                    // Three ordinary ticks: 50 -> 53; then floor(53 * 360 / 200) + 1.
+                    helper.assertTrue(accessor.eternalFurnace$getCookingTimer() == 96,
+                            "Progress was not proportionally preserved when Hellfire took over");
+                    helper.assertTrue(furnace.getItem(1).isEmpty(), "Hellfire created or retained consumed fuel");
+                    helper.assertTrue(furnace.getItem(0).is(Items.RAW_IRON) && furnace.getItem(0).getCount() == 1,
+                            "Fuel handoff consumed the unfinished input");
+                    helper.assertTrue(furnace.getItem(2).isEmpty(), "Fuel handoff produced premature output");
+                })
+                .thenSucceed();
     }
 
     private static void emptyInputDoesNotLight(GameTestHelper helper) {
@@ -235,30 +271,52 @@ public final class ModGameTests {
         accessor.eternalFurnace$setCookingTotalTime(200);
         accessor.eternalFurnace$setCookingTimer(50);
 
-        helper.runAtTickTime(2, () -> {
-            int progress = accessor.eternalFurnace$getCookingTimer();
-            helper.assertTrue(accessor.eternalFurnace$getCookingTotalTime() == 360, "Hellfire did not apply the 1.8x total time");
-            helper.assertTrue(progress >= 90 && progress <= 93, "Progress was not proportionally rescaled to Hellfire timing: " + progress);
-            helper.succeed();
-        });
+        helper.startSequence()
+                .thenWaitUntil(() -> helper.assertTrue(accessor.eternalFurnace$getCookingTimer() != 50,
+                        "Furnace has not ticked since Hellfire was added"))
+                .thenExecute(() -> {
+                    int progress = accessor.eternalFurnace$getCookingTimer();
+                    helper.assertTrue(accessor.eternalFurnace$getLitTotalTime() == HELLFIRE_BURN_TIME_TICKS,
+                            "Furnace did not enter Hellfire mode");
+                    helper.assertTrue(accessor.eternalFurnace$getCookingTotalTime() == 360,
+                            "Hellfire did not apply the 1.8x total time");
+                    // 50 / 200 becomes 90 / 360, followed by one vanilla cooking tick.
+                    helper.assertTrue(progress == 91,
+                            "Progress was not proportionally rescaled to Hellfire timing: " + progress);
+                })
+                .thenSucceed();
     }
 
     private static void removalRescalesProgress(GameTestHelper helper) {
-        FurnaceBlockEntity furnace = placeFurnace(helper, false);
+        FurnaceBlockEntity furnace = placeFurnace(helper, true);
         furnace.setItem(0, new ItemStack(Items.RAW_IRON));
         AbstractFurnaceAccessor accessor = (AbstractFurnaceAccessor) furnace;
         accessor.eternalFurnace$setLitTimeRemaining(1);
         accessor.eternalFurnace$setLitTotalTime(HELLFIRE_BURN_TIME_TICKS);
         accessor.eternalFurnace$setCookingTotalTime(360);
         accessor.eternalFurnace$setCookingTimer(90);
+        helper.setBlock(FURNACE_POS, helper.getBlockState(FURNACE_POS).setValue(AbstractFurnaceBlock.LIT, true));
+        helper.assertTrue(accessor.eternalFurnace$getLitTotalTime() == HELLFIRE_BURN_TIME_TICKS
+                        && accessor.eternalFurnace$getCookingTotalTime() == 360
+                        && accessor.eternalFurnace$getCookingTimer() == 90,
+                "Removal fixture was not in the expected Hellfire-powered state");
+        helper.setBlock(HEAT_POS, Blocks.AIR);
 
-        helper.runAtTickTime(2, () -> {
-            int progress = accessor.eternalFurnace$getCookingTimer();
-            helper.assertTrue(accessor.eternalFurnace$getCookingTotalTime() == 200, "Removing Hellfire did not restore normal total time");
-            helper.assertTrue(progress >= 46 && progress <= 50, "Progress was not proportionally rescaled after removal: " + progress);
-            helper.assertFalse(helper.getBlockState(FURNACE_POS).getValue(AbstractFurnaceBlock.LIT), "Furnace stayed lit after Hellfire removal");
-            helper.succeed();
-        });
+        helper.startSequence()
+                .thenWaitUntil(() -> helper.assertTrue(accessor.eternalFurnace$getLitTimeRemaining() == 0,
+                        "Furnace has not ticked since Hellfire was removed"))
+                .thenExecute(() -> {
+                    int progress = accessor.eternalFurnace$getCookingTimer();
+                    helper.assertTrue(accessor.eternalFurnace$getCookingTotalTime() == 200,
+                            "Removing Hellfire did not restore normal total time");
+                    // 90 / 360 becomes 50 / 200; unheated vanilla then cools by two.
+                    helper.assertTrue(progress == 48,
+                            "Progress was not proportionally rescaled after removal: " + progress);
+                    helper.assertFalse(helper.getBlockState(FURNACE_POS).getValue(AbstractFurnaceBlock.LIT),
+                            "Furnace stayed lit after Hellfire removal");
+                    helper.assertTrue(furnace.getItem(1).isEmpty(), "Hellfire removal changed the fuel slot");
+                })
+                .thenSucceed();
     }
 
     private static void inputChangeIsSafe(GameTestHelper helper) {
