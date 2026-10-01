@@ -1,6 +1,22 @@
-.gradle/
-build/
-run/
+# IDEs
 .idea/
 *.iml
+.settings/
+.metadata/
+.classpath
+.project
 out/
+
+# Gradle / build outputs
+.gradle/
+build/
+
+# Minecraft run directories
+run/
+eclipse/
+
+# Local AI/editor settings
+.claude/
+
+# Forge MDK extras
+forge*changelog.txt

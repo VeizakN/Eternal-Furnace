@@ -1,12 +1,14 @@
 {
   "required": true,
+  "refmap": "eternalfurnace.refmap.json",
   "minVersion": "0.8",
   "package": "com.eternalfurnace.mixin",
-  "compatibilityLevel": "JAVA_25",
+  "compatibilityLevel": "JAVA_17",
   "mixins": [
     "AbstractFurnaceAccessor",
     "FurnaceBlockEntityMixin"
   ],
+  "client": [],
   "injectors": {
     "defaultRequire": 1
   }

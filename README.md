@@ -1,42 +1,19 @@
-# Eternal Furnace
+# Eternal Furnace — Minecraft 1.20.1 / Forge
 
-Give Netherrack a purpose.
+This branch preserves the legacy **Eternal Furnace 1.0.2** source for **Minecraft 1.20.1**.
 
-**Eternal Furnace** adds **Hellfire Netherrack**: place it directly beneath a regular Furnace and it becomes an infinite fuel source. The trade-off is speed — Hellfire-powered smelting takes **1.8× longer** than the recipe's normal cooking time.
+- **Minecraft:** 1.20.1
+- **Forge:** 47.3.0
+- **Java:** 17
+- **Mod version:** 1.0.2
 
-[Download on Modrinth](https://modrinth.com/mod/eternal-furnace)
+The current NeoForge version lives on [`main`](https://github.com/VeizakN/Eternal-Furnace/tree/main).
 
-## Features
+## Historical behavior
 
-- Infinite fuel for the regular vanilla Furnace
-- Simple recipe: **Flint and Steel + Netherrack**
-- Flint and Steel loses only one durability point when crafting
-- Hellfire smelting is balanced at **1.8× normal cooking time**
-- Existing burning fuel is allowed to finish before Hellfire takes over
-- Fuel waiting in the fuel slot is not consumed while Hellfire can power the Furnace
-- Removing Hellfire restores vanilla Furnace behavior
-- Cooking progress is proportionally preserved when switching between normal and Hellfire timing
-- Recipes with custom cooking times are supported
-- Smokers and Blast Furnaces are intentionally unaffected
-- Works in singleplayer and multiplayer
-
-## Current source
-
-The current `main` branch targets:
-
-- **Minecraft 26.2**
-- **NeoForge 26.2.0.88+**
-- **Java 25**
-
-The older Minecraft 1.20.1 / Forge release is available on [Modrinth](https://modrinth.com/mod/eternal-furnace).
+This version uses a normal shapeless recipe for Hellfire Netherrack, so **Flint and Steel is consumed by crafting**. That was the behavior of the 1.20.1 release and is preserved here as-is. The current version fixes this so crafting costs durability instead.
 
 ## Building
-
-Clone the repository and run:
-
-```bash
-./gradlew build
-```
 
 On Windows:
 
@@ -44,22 +21,17 @@ On Windows:
 gradlew.bat build
 ```
 
-The project uses the Gradle Wrapper and a Java 25 toolchain. The Foojay toolchain resolver configured by the project can provision the required JDK when supported by your environment.
+On Linux/macOS:
 
-## Tests
+```bash
+./gradlew build
+```
 
-The 26.2 port includes GameTests covering the important furnace and crafting behavior, including:
+The built JAR will be placed in `build/libs/`.
 
-- Hellfire fuel handoff
-- Invalid and blocked inputs
-- Ordinary fuel finishing before Hellfire takeover
-- Proportional cooking-time changes
-- Furnace-only behavior
-- Durable Flint and Steel crafting
-- Persistence and concurrent furnaces
-- Recipe changes with different cooking times
+## Download
 
-See [`PORT_NOTES.md`](PORT_NOTES.md) for the full port and test notes.
+[Download Eternal Furnace on Modrinth](https://modrinth.com/mod/eternal-furnace)
 
 ## License
 

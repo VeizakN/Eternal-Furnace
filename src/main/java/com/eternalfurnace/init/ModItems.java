@@ -2,20 +2,18 @@ package com.eternalfurnace.init;
 
 import com.eternalfurnace.EternalFurnaceMod;
 import net.minecraft.world.item.BlockItem;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.neoforge.registries.DeferredItem;
-import net.neoforged.neoforge.registries.DeferredRegister;
+import net.minecraft.world.item.Item;
+import net.minecraftforge.registries.DeferredRegister;
+import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraftforge.registries.RegistryObject;
 
-public final class ModItems {
-    public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(EternalFurnaceMod.MOD_ID);
+public class ModItems {
 
-    public static final DeferredItem<BlockItem> HELLFIRE_NETHERRACK =
-            ITEMS.registerSimpleBlockItem(ModBlocks.HELLFIRE_NETHERRACK);
+    public static final DeferredRegister<Item> ITEMS =
+            DeferredRegister.create(ForgeRegistries.ITEMS, EternalFurnaceMod.MOD_ID);
 
-    private ModItems() {
-    }
-
-    public static void register(IEventBus modEventBus) {
-        ITEMS.register(modEventBus);
-    }
+    public static final RegistryObject<Item> HELLFIRE_NETHERRACK = ITEMS.register(
+            "hellfire_netherrack",
+            () -> new BlockItem(ModBlocks.HELLFIRE_NETHERRACK.get(), new Item.Properties())
+    );
 }

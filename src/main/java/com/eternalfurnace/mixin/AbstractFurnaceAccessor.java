@@ -1,32 +1,34 @@
 package com.eternalfurnace.mixin;
 
 import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
+import net.minecraft.world.level.Level;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
+import org.spongepowered.asm.mixin.gen.Invoker;
 
 @Mixin(AbstractFurnaceBlockEntity.class)
 public interface AbstractFurnaceAccessor {
-    @Accessor("litTimeRemaining")
-    int eternalFurnace$getLitTimeRemaining();
 
-    @Accessor("litTimeRemaining")
-    void eternalFurnace$setLitTimeRemaining(int value);
+    @Accessor("litTime")
+    int getLitTime();
 
-    @Accessor("litTotalTime")
-    int eternalFurnace$getLitTotalTime();
+    @Accessor("litTime")
+    void setLitTime(int value);
 
-    @Accessor("litTotalTime")
-    void eternalFurnace$setLitTotalTime(int value);
+    @Accessor("cookingProgress")
+    int getCookingProgress();
 
-    @Accessor("cookingTimer")
-    int eternalFurnace$getCookingTimer();
-
-    @Accessor("cookingTimer")
-    void eternalFurnace$setCookingTimer(int value);
+    @Accessor("cookingProgress")
+    void setCookingProgress(int value);
 
     @Accessor("cookingTotalTime")
-    int eternalFurnace$getCookingTotalTime();
+    int getCookingTotalTime();
 
     @Accessor("cookingTotalTime")
-    void eternalFurnace$setCookingTotalTime(int value);
+    void setCookingTotalTime(int value);
+
+    @Invoker("getTotalCookTime")
+    static int invokeGetTotalCookTime(Level level, AbstractFurnaceBlockEntity blockEntity) {
+        throw new AssertionError();
+    }
 }

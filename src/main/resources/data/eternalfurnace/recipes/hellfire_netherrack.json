@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "minecraft:flint_and_steel" },
+    { "item": "minecraft:netherrack" }
+  ],
+  "result": {
+    "item": "eternalfurnace:hellfire_netherrack",
+    "count": 1
+  }
+}

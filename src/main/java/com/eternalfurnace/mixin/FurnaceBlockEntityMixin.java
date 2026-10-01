@@ -2,130 +2,87 @@ package com.eternalfurnace.mixin;
 
 import com.eternalfurnace.init.ModBlocks;
 import net.minecraft.core.BlockPos;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.AbstractCookingRecipe;
-import net.minecraft.world.item.crafting.RecipeHolder;
-import net.minecraft.world.item.crafting.RecipeType;
-import net.minecraft.world.item.crafting.SingleRecipeInput;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.AbstractFurnaceBlock;
 import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
-import net.minecraft.world.level.block.entity.BlockEntityTypes;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import org.objectweb.asm.Opcodes;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+/**
+ * Injects into AbstractFurnaceBlockEntity.serverTick to implement Hellfire Netherrack behaviour:
+ * - Only affects vanilla Furnace (not Blast Furnace or Smoker).
+ * - Existing vanilla fuel burns normally and is never shortened by Hellfire Netherrack.
+ * - Once vanilla fuel runs out, Hellfire keeps litTime positive and slows the current recipe to
+ *   1.8 times its normal cooking time.
+ */
 @Mixin(AbstractFurnaceBlockEntity.class)
 public abstract class FurnaceBlockEntityMixin {
-    private static final int HELLFIRE_BURN_TIME_TICKS = 2;
+
     private static final int SLOWDOWN_NUMERATOR = 9;
     private static final int SLOWDOWN_DENOMINATOR = 5;
 
     /**
-     * Hellfire replaces the next fuel burn whenever the furnace has no active burn time.
-     * Fuel that is already burning is allowed to finish, but an item waiting in the fuel
-     * slot is not consumed once Hellfire can take over. This preserves the 1.20.1 behavior.
-     *
-     * We inject at HEAD instead of relying on a bytecode ordinal. Minecraft 26.2
-     * decrements the burn timer before it validates the recipe, so a value of two
-     * becomes the one live Hellfire tick that vanilla observes later in this tick.
-     *
-     * The recipe and result-slot checks deliberately mirror vanilla serverTick.
-     * Supplying burn time before those checks would leave the block visually lit
-     * for an invalid input or a recipe whose output cannot fit.
+     * Runs after vanilla has captured its previous lit state and decremented litTime, but before it
+     * reads the furnace inventory. This lets vanilla's own end-of-tick comparison update LIT.
      */
-    @Inject(method = "serverTick", at = @At("HEAD"))
-    private static void eternalFurnace$applyHellfire(
-            ServerLevel level,
-            BlockPos pos,
-            BlockState state,
-            AbstractFurnaceBlockEntity entity,
-            CallbackInfo callbackInfo
-    ) {
-        if (entity.getType() != BlockEntityTypes.FURNACE) {
-            return;
-        }
+    @Inject(
+            method = "serverTick",
+            at = @At(
+                    value = "FIELD",
+                    target = "Lnet/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity;items:Lnet/minecraft/core/NonNullList;",
+                    opcode = Opcodes.GETFIELD,
+                    ordinal = 0
+            )
+    )
+    private static void eternalfurnace$applyHellfireAfterFuelTick(
+            Level level, BlockPos pos, BlockState state,
+            AbstractFurnaceBlockEntity blockEntity, CallbackInfo ci) {
 
-        AbstractFurnaceAccessor accessor = (AbstractFurnaceAccessor) entity;
-        boolean hasHellfire = level.getBlockState(pos.below()).is(ModBlocks.HELLFIRE_NETHERRACK.get());
-        int litTimeRemaining = accessor.eternalFurnace$getLitTimeRemaining();
-        boolean wasPoweredByHellfire = accessor.eternalFurnace$getLitTotalTime() == HELLFIRE_BURN_TIME_TICKS;
+        // Match the exact vanilla block entity type, not subclasses used by other mods.
+        if (blockEntity.getType() != BlockEntityType.FURNACE) return;
 
-        // The overwhelmingly common vanilla path must not perform a second recipe
-        // lookup. We only inspect the recipe when Hellfire is present or when its
-        // persisted marker needs to restore vanilla timing after removal.
-        if (!hasHellfire && !wasPoweredByHellfire) {
-            return;
-        }
+        AbstractFurnaceAccessor accessor = (AbstractFurnaceAccessor) blockEntity;
 
-        // An ordinary fuel burn owns the furnace until its last effective tick.
-        if (hasHellfire && litTimeRemaining > 1 && !wasPoweredByHellfire) {
-            return;
-        }
+        ItemStack input = blockEntity.getItem(0);
+        boolean hasInput = !input.isEmpty();
+        boolean hasHellfire = hasInput
+                && level.getBlockState(pos.below()).is(ModBlocks.HELLFIRE_NETHERRACK.get());
 
-        CookingState cookingState = getCookingState(level, entity);
-        if (cookingState == null) {
-            return;
-        }
+        // At this injection point vanilla has already reduced litTime by one. A positive value is
+        // therefore genuine remaining fuel and must not be shortened or replaced.
+        boolean usingHellfire = hasHellfire && accessor.getLitTime() <= 0;
 
-        int normalCookTime = Math.max(1, cookingState.recipe().value().cookingTime());
-        int slowCookTime = slowCookTime(normalCookTime);
+        // Usually no work is needed without Hellfire. The second condition handles the one tick in
+        // which an active Hellfire furnace loses its support: the block is still visually lit, but
+        // vanilla has just decremented the synthetic final burn tick to zero.
+        boolean mayNeedVanillaTimeRestore = !hasHellfire
+                && hasInput
+                && accessor.getLitTime() <= 0
+                && state.getValue(AbstractFurnaceBlock.LIT);
+        if (!usingHellfire && !mayNeedVanillaTimeRestore) return;
 
-        if (hasHellfire && litTimeRemaining <= 1 && cookingState.canBurn()) {
-            // Changing the timer at HEAD makes vanilla treat the furnace as already
-            // lit, so it will not perform its usual block-state transition. The
-            // recipe/result checks above make this explicit transition safe.
-            if (!state.getValue(AbstractFurnaceBlock.LIT)) {
-                level.setBlock(pos, state.setValue(AbstractFurnaceBlock.LIT, true), 3);
-            }
-            accessor.eternalFurnace$setLitTimeRemaining(HELLFIRE_BURN_TIME_TICKS);
-            accessor.eternalFurnace$setLitTotalTime(HELLFIRE_BURN_TIME_TICKS);
-            changeCookingTime(accessor, slowCookTime);
-            return;
-        }
+        int normalCookTime = Math.max(
+                1,
+                AbstractFurnaceAccessor.invokeGetTotalCookTime(level, blockEntity)
+        );
+        int hellfireCookTime = slowCookTime(normalCookTime);
 
-        // litTotalTime == HELLFIRE_BURN_TIME_TICKS is the persistent marker for Hellfire's renewable tick.
-        // It also lets removal restore normal timing after a blocked result slot has
-        // already made vanilla clear the visible LIT state.
-        if (!hasHellfire
-                && litTimeRemaining <= 1
-                && wasPoweredByHellfire) {
+        if (usingHellfire) {
+            // One tick is enough because vanilla's decrement has already happened this tick.
+            accessor.setLitTime(1);
+            changeCookingTime(accessor, hellfireCookTime);
+        } else if (accessor.getCookingTotalTime() == hellfireCookTime) {
+            // Restore vanilla timing when Hellfire is removed. Rescaling progress prevents a
+            // progress value above the shorter vanilla total, which would otherwise never finish
+            // because vanilla completes a recipe only when progress == total.
             changeCookingTime(accessor, normalCookTime);
         }
-    }
-
-    private static CookingState getCookingState(ServerLevel level, AbstractFurnaceBlockEntity entity) {
-        ItemStack ingredient = entity.getItem(0);
-        if (ingredient.isEmpty()) {
-            return null;
-        }
-
-        SingleRecipeInput input = new SingleRecipeInput(ingredient);
-        RecipeHolder<? extends AbstractCookingRecipe> recipe = level.recipeAccess()
-                .getRecipeFor(RecipeType.SMELTING, input, level)
-                .orElse(null);
-        if (recipe == null) {
-            return null;
-        }
-
-        ItemStack result = recipe.value().assemble(input);
-        return new CookingState(recipe, !result.isEmpty() && canBurn(entity, result));
-    }
-
-    private static boolean canBurn(AbstractFurnaceBlockEntity entity, ItemStack recipeResult) {
-        ItemStack currentResult = entity.getItem(2);
-        if (currentResult.isEmpty()) {
-            return true;
-        }
-        if (!ItemStack.isSameItemSameComponents(currentResult, recipeResult)) {
-            return false;
-        }
-
-        int combinedCount = currentResult.getCount() + recipeResult.getCount();
-        int maximumCount = Math.min(entity.getMaxStackSize(), recipeResult.getMaxStackSize());
-        return combinedCount <= maximumCount;
     }
 
     private static int slowCookTime(int normalCookTime) {
@@ -135,23 +92,17 @@ public abstract class FurnaceBlockEntityMixin {
     }
 
     private static void changeCookingTime(AbstractFurnaceAccessor accessor, int newTotalTime) {
-        int oldTotalTime = accessor.eternalFurnace$getCookingTotalTime();
-        if (oldTotalTime == newTotalTime) {
-            return;
-        }
+        int oldTotalTime = accessor.getCookingTotalTime();
+        if (oldTotalTime == newTotalTime) return;
 
-        int oldProgress = Math.max(0, accessor.eternalFurnace$getCookingTimer());
+        int oldProgress = Math.max(0, accessor.getCookingProgress());
         int newProgress = 0;
-
         if (oldTotalTime > 0 && oldProgress > 0) {
-            long scaledProgress = (long) oldProgress * newTotalTime / oldTotalTime;
-            newProgress = (int) Math.min((long) newTotalTime - 1L, scaledProgress);
+            long proportionalProgress = (long) oldProgress * newTotalTime / oldTotalTime;
+            newProgress = (int) Math.min(newTotalTime - 1L, proportionalProgress);
         }
 
-        accessor.eternalFurnace$setCookingTimer(newProgress);
-        accessor.eternalFurnace$setCookingTotalTime(newTotalTime);
-    }
-
-    private record CookingState(RecipeHolder<? extends AbstractCookingRecipe> recipe, boolean canBurn) {
+        accessor.setCookingProgress(newProgress);
+        accessor.setCookingTotalTime(newTotalTime);
     }
 }

@@ -1,29 +1,28 @@
 package com.eternalfurnace.init;
 
 import com.eternalfurnace.EternalFurnaceMod;
+import com.eternalfurnace.block.HellfireNetherrackBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.neoforge.registries.DeferredBlock;
-import net.neoforged.neoforge.registries.DeferredRegister;
+import net.minecraftforge.registries.DeferredRegister;
+import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraftforge.registries.RegistryObject;
 
-public final class ModBlocks {
-    public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(EternalFurnaceMod.MOD_ID);
+public class ModBlocks {
 
-    public static final DeferredBlock<Block> HELLFIRE_NETHERRACK = BLOCKS.registerSimpleBlock(
+    public static final DeferredRegister<Block> BLOCKS =
+            DeferredRegister.create(ForgeRegistries.BLOCKS, EternalFurnaceMod.MOD_ID);
+
+    public static final RegistryObject<Block> HELLFIRE_NETHERRACK = BLOCKS.register(
             "hellfire_netherrack",
-            properties -> properties
-                    .mapColor(MapColor.NETHER)
-                    .strength(0.4F)
-                    .sound(SoundType.NETHERRACK)
-                    .requiresCorrectToolForDrops()
+            () -> new HellfireNetherrackBlock(
+                    BlockBehaviour.Properties.of()
+                            .mapColor(MapColor.NETHER)
+                            .strength(0.4F)
+                            .sound(SoundType.NETHERRACK)
+                            .requiresCorrectToolForDrops()
+            )
     );
-
-    private ModBlocks() {
-    }
-
-    public static void register(IEventBus modEventBus) {
-        BLOCKS.register(modEventBus);
-    }
 }
