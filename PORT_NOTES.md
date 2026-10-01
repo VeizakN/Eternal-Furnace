@@ -63,3 +63,43 @@ On Windows:
     gradlew.bat build
 
 The build needs a Java 25 toolchain; the standard MDK Foojay resolver can provision it.
+
+## GameTest synchronization audit
+
+The server runs 18 required Eternal Furnace tests plus one default Minecraft test
+(19 total). None of the old absolute test ticks were part of a gameplay contract:
+they were waits for block-entity updates, which may start later in a fresh chunk.
+All registrations and their existing timeouts are retained.
+
+| Test | Previous scheduling assumption | Current observation |
+| --- | --- | --- |
+| `smelts_without_fuel` | Visually lit by tick 5 | Cooking starts, then LIT is asserted; await exactly one ingot |
+| `does_not_consume_waiting_fuel` | Already state-based | Unchanged: await output while the waiting coal remains |
+| `burning_fuel_finishes_before_hellfire` | Coal consumed by tick 5; still ordinary fuel on tick 6 | Observe a real coal burn before adding Hellfire; observe the shortened burn countdown and exact proportional handoff |
+| `empty_input_does_not_light` | Tick 5 assumed the idle furnace had updated | Observe vanilla clearing an idle progress sentinel; assert no LIT on every observed tick |
+| `invalid_input_does_not_light` | Same tick-5 assumption | Same idle observation, retaining no-LIT/no-output assertions |
+| `blocked_result_does_not_light` | Same tick-5 assumption | Same idle observation, retaining no-LIT/input/output assertions |
+| `blocked_during_work_stops_safely` | Working by tick 20; stopped by tick 25 | Wait for partial work before blocking; observe burn ending and assert reduced progress and unchanged slots |
+| `heat_mode_rescales_progress` | First update completed by tick 2 | Observe seeded progress changing; immediately assert 360 total and exactly 91 progress (90 scaled + one cooking tick) |
+| `removal_rescales_progress` | First update completed by tick 2 | Remove Hellfire from a marked, visibly lit fixture; observe burn ending; immediately assert 200 total, 48 progress (50 scaled - two cooldown units), and no LIT |
+| `input_change_is_safe` | Cooking had started before input replacement on tick 20 | Observe cooking before replacement; await the single replacement result |
+| `different_recipe_times_switch_safely` | First recipe working on tick 10; replacement working on tick 12 | Observe both recipes starting; assert 180 -> synchronous 200/reset -> 360 and fresh progress before awaiting output |
+| `multiple_furnaces_are_independent` | Already state-based | Unchanged: await both distinct results and empty fuel slots |
+| `save_reload_preserves_work` | Reloaded entity resumed by tick 3 | Assert persisted values before reattachment, then await resumed cooking |
+| `gui_flame_indicator_is_lit` | Menu values updated by tick 5 | Await the actual menu flame state and positive flame height without fuel |
+| `recipe_damages_flint_and_steel` | Synchronous recipe API | Unchanged, including the final durability use |
+| `player_crafting_damages_flint_and_steel` | Synchronous server crafting path | Unchanged: real `ResultSlot.onTake` and exactly one durability spent |
+| `smoker_is_unchanged` | Idle smoker had updated by tick 5 | Observe an idle tick; retain no-LIT/no-output assertions |
+| `blast_furnace_is_unchanged` | Idle blast furnace had updated by tick 5 | Observe an idle tick; retain no-LIT/no-output assertions |
+
+`succeedWhen` (or a sequence's `thenWaitUntil`) only waits for observable states.
+Transition assertions run in `thenExecute`, so a wrong value at the first observed
+update fails immediately instead of being retried until it happens to match.
+The idle sentinel is cooking progress, not supplied heat; vanilla clears it with
+no fuel, and `onEachTick` keeps the original negative assertions active while waiting.
+The mixin, public mechanics, CI commands and test timeouts are unchanged.
+
+Run both checks with Java 25:
+
+    ./gradlew build
+    ./gradlew runGameTestServer
