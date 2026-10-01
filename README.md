@@ -1,5 +1,7 @@
 # Eternal Furnace
 
+[![CI](https://github.com/VeizakN/Eternal-Furnace/actions/workflows/ci.yml/badge.svg)](https://github.com/VeizakN/Eternal-Furnace/actions/workflows/ci.yml)
+
 Give Netherrack a purpose.
 
 **Eternal Furnace** adds **Hellfire Netherrack**: place it directly beneath a regular Furnace and it becomes an infinite fuel source. The trade-off is speed — Hellfire-powered smelting takes **1.8× longer** than the recipe's normal cooking time.
