@@ -110,18 +110,23 @@ public final class ModGameTests {
     private static void smeltsWithoutFuel(GameTestHelper helper) {
         FurnaceBlockEntity furnace = placeFurnace(helper, true);
         furnace.setItem(0, new ItemStack(Items.RAW_IRON));
+        AbstractFurnaceAccessor accessor = (AbstractFurnaceAccessor) furnace;
 
-        helper.runAtTickTime(5, () -> helper.assertTrue(
-                helper.getBlockState(FURNACE_POS).getValue(AbstractFurnaceBlock.LIT),
-                "A valid Hellfire-powered recipe did not visually light the furnace"
-        ));
-        helper.succeedWhen(() -> {
-            helper.assertTrue(furnace.getItem(1).isEmpty(), "Hellfire inserted fuel into an empty fuel slot");
-            helper.assertTrue(
-                    furnace.getItem(2).is(Items.IRON_INGOT) && furnace.getItem(2).getCount() == 1,
-                    "Hellfire furnace did not produce exactly one iron ingot"
-            );
-        });
+        helper.startSequence()
+                .thenWaitUntil(() -> helper.assertTrue(accessor.eternalFurnace$getCookingTimer() > 0,
+                        "Hellfire furnace has not started cooking yet"))
+                .thenExecute(() -> helper.assertTrue(
+                        helper.getBlockState(FURNACE_POS).getValue(AbstractFurnaceBlock.LIT),
+                        "A valid Hellfire-powered recipe did not visually light the furnace"
+                ))
+                .thenWaitUntil(() -> {
+                    helper.assertTrue(furnace.getItem(1).isEmpty(), "Hellfire inserted fuel into an empty fuel slot");
+                    helper.assertTrue(
+                            furnace.getItem(2).is(Items.IRON_INGOT) && furnace.getItem(2).getCount() == 1,
+                            "Hellfire furnace did not produce exactly one iron ingot"
+                    );
+                })
+                .thenSucceed();
     }
 
     private static void doesNotConsumeWaitingFuel(GameTestHelper helper) {
@@ -208,22 +213,20 @@ public final class ModGameTests {
     }
 
     private static void emptyInputDoesNotLight(GameTestHelper helper) {
-        placeFurnace(helper, true);
+        FurnaceBlockEntity furnace = placeFurnace(helper, true);
 
-        helper.runAtTickTime(5, () -> {
-            helper.assertFalse(helper.getBlockState(FURNACE_POS).getValue(AbstractFurnaceBlock.LIT), "Empty input lit the furnace");
-            helper.succeed();
-        });
+        checkAfterIdleTick(helper, furnace, () -> helper.assertFalse(
+                helper.getBlockState(FURNACE_POS).getValue(AbstractFurnaceBlock.LIT), "Empty input lit the furnace"
+        ));
     }
 
     private static void invalidInputDoesNotLight(GameTestHelper helper) {
         FurnaceBlockEntity furnace = placeFurnace(helper, true);
         furnace.setItem(0, new ItemStack(Items.DIRT));
 
-        helper.runAtTickTime(5, () -> {
+        checkAfterIdleTick(helper, furnace, () -> {
             helper.assertFalse(helper.getBlockState(FURNACE_POS).getValue(AbstractFurnaceBlock.LIT), "Invalid input lit the furnace");
             helper.assertTrue(furnace.getItem(2).isEmpty(), "Invalid input produced an item");
-            helper.succeed();
         });
     }
 
@@ -232,11 +235,10 @@ public final class ModGameTests {
         furnace.setItem(0, new ItemStack(Items.RAW_IRON));
         furnace.setItem(2, new ItemStack(Items.IRON_INGOT, 64));
 
-        helper.runAtTickTime(5, () -> {
+        checkAfterIdleTick(helper, furnace, () -> {
             helper.assertFalse(helper.getBlockState(FURNACE_POS).getValue(AbstractFurnaceBlock.LIT), "Blocked output lit the furnace");
             helper.assertTrue(furnace.getItem(0).getCount() == 1, "Blocked output consumed the input");
             helper.assertTrue(furnace.getItem(2).getCount() == 64, "Blocked output duplicated or removed items");
-            helper.succeed();
         });
     }
 
@@ -246,22 +248,29 @@ public final class ModGameTests {
         AbstractFurnaceAccessor accessor = (AbstractFurnaceAccessor) furnace;
         int[] progressWhenBlocked = new int[1];
 
-        helper.runAtTickTime(20, () -> {
-            progressWhenBlocked[0] = accessor.eternalFurnace$getCookingTimer();
-            furnace.setItem(2, new ItemStack(Items.IRON_INGOT, 64));
-        });
-        helper.runAtTickTime(25, () -> {
-            helper.assertFalse(helper.getBlockState(FURNACE_POS).getValue(AbstractFurnaceBlock.LIT),
-                    "A newly blocked output left the furnace lit");
-            helper.assertTrue(accessor.eternalFurnace$getCookingTimer() < progressWhenBlocked[0],
-                    "Cooking progress continued while the output was blocked");
-            helper.assertTrue(furnace.getItem(0).is(Items.RAW_IRON) && furnace.getItem(0).getCount() == 1,
-                    "A newly blocked output consumed input");
-            helper.assertTrue(furnace.getItem(2).is(Items.IRON_INGOT) && furnace.getItem(2).getCount() == 64,
-                    "A newly blocked output duplicated or removed items");
-            helper.assertTrue(furnace.getItem(1).isEmpty(), "A newly blocked output changed the fuel slot");
-            helper.succeed();
-        });
+        helper.startSequence()
+                .thenWaitUntil(() -> helper.assertTrue(accessor.eternalFurnace$getCookingTimer() >= 10,
+                        "Furnace has not accumulated partial cooking progress yet"))
+                .thenExecute(() -> {
+                    helper.assertTrue(helper.getBlockState(FURNACE_POS).getValue(AbstractFurnaceBlock.LIT),
+                            "Furnace was not working before its output was blocked");
+                    progressWhenBlocked[0] = accessor.eternalFurnace$getCookingTimer();
+                    furnace.setItem(2, new ItemStack(Items.IRON_INGOT, 64));
+                })
+                .thenWaitUntil(() -> helper.assertTrue(accessor.eternalFurnace$getLitTimeRemaining() == 0,
+                        "The blocked furnace has not stopped burning yet"))
+                .thenExecute(() -> {
+                    helper.assertFalse(helper.getBlockState(FURNACE_POS).getValue(AbstractFurnaceBlock.LIT),
+                            "A newly blocked output left the furnace lit");
+                    helper.assertTrue(accessor.eternalFurnace$getCookingTimer() < progressWhenBlocked[0],
+                            "Cooking progress continued while the output was blocked");
+                    helper.assertTrue(furnace.getItem(0).is(Items.RAW_IRON) && furnace.getItem(0).getCount() == 1,
+                            "A newly blocked output consumed input");
+                    helper.assertTrue(furnace.getItem(2).is(Items.IRON_INGOT) && furnace.getItem(2).getCount() == 64,
+                            "A newly blocked output duplicated or removed items");
+                    helper.assertTrue(furnace.getItem(1).isEmpty(), "A newly blocked output changed the fuel slot");
+                })
+                .thenSucceed();
     }
 
     private static void heatModeRescalesProgress(GameTestHelper helper) {
@@ -322,16 +331,21 @@ public final class ModGameTests {
     private static void inputChangeIsSafe(GameTestHelper helper) {
         FurnaceBlockEntity furnace = placeFurnace(helper, true);
         furnace.setItem(0, new ItemStack(Items.RAW_IRON));
+        AbstractFurnaceAccessor accessor = (AbstractFurnaceAccessor) furnace;
 
-        helper.runAtTickTime(20, () -> furnace.setItem(0, new ItemStack(Items.RAW_GOLD)));
-        helper.succeedWhen(() -> {
-            helper.assertTrue(furnace.getItem(0).isEmpty(), "Replacement input was not consumed exactly once");
-            helper.assertTrue(furnace.getItem(1).isEmpty(), "Changing input inserted or consumed fuel");
-            helper.assertTrue(
-                    furnace.getItem(2).is(Items.GOLD_INGOT) && furnace.getItem(2).getCount() == 1,
-                    "Changing input produced the wrong item or duplicated output"
-            );
-        });
+        helper.startSequence()
+                .thenWaitUntil(() -> helper.assertTrue(accessor.eternalFurnace$getCookingTimer() > 0,
+                        "Original input has not started cooking yet"))
+                .thenExecute(() -> furnace.setItem(0, new ItemStack(Items.RAW_GOLD)))
+                .thenWaitUntil(() -> {
+                    helper.assertTrue(furnace.getItem(0).isEmpty(), "Replacement input was not consumed exactly once");
+                    helper.assertTrue(furnace.getItem(1).isEmpty(), "Changing input inserted or consumed fuel");
+                    helper.assertTrue(
+                            furnace.getItem(2).is(Items.GOLD_INGOT) && furnace.getItem(2).getCount() == 1,
+                            "Changing input produced the wrong item or duplicated output"
+                    );
+                })
+                .thenSucceed();
     }
 
     private static void differentRecipeTimesSwitchSafely(GameTestHelper helper) {
@@ -349,28 +363,32 @@ public final class ModGameTests {
         furnace.setItem(0, new ItemStack(Items.STICK));
         AbstractFurnaceAccessor accessor = (AbstractFurnaceAccessor) furnace;
 
-        helper.runAtTickTime(10, () -> {
-            helper.assertTrue(accessor.eternalFurnace$getCookingTotalTime() == 180,
-                    "Hellfire did not scale the 100-tick recipe to 180 ticks");
-            helper.assertTrue(accessor.eternalFurnace$getCookingTimer() > 0,
-                    "The first recipe did not begin cooking");
-            furnace.setItem(0, new ItemStack(Items.RAW_IRON));
-            helper.assertTrue(accessor.eternalFurnace$getCookingTotalTime() == 200,
-                    "Changing input did not select the new recipe's vanilla time");
-            helper.assertTrue(accessor.eternalFurnace$getCookingTimer() == 0,
-                    "Vanilla progress was incorrectly carried into a different recipe");
-        });
-        helper.runAtTickTime(12, () -> {
-            helper.assertTrue(accessor.eternalFurnace$getCookingTotalTime() == 360,
-                    "Hellfire did not scale the replacement 200-tick recipe to 360 ticks");
-            helper.assertTrue(accessor.eternalFurnace$getCookingTimer() > 0,
-                    "The replacement recipe did not start from fresh progress");
-        });
-        helper.succeedWhen(() -> {
-            helper.assertTrue(furnace.getItem(0).isEmpty(), "Replacement input was not consumed");
-            helper.assertTrue(furnace.getItem(2).is(Items.IRON_INGOT) && furnace.getItem(2).getCount() == 1,
-                    "Switching recipes produced a stale or duplicated result");
-        });
+        helper.startSequence()
+                .thenWaitUntil(() -> helper.assertTrue(accessor.eternalFurnace$getCookingTimer() > 0,
+                        "The first recipe did not begin cooking"))
+                .thenExecute(() -> {
+                    helper.assertTrue(accessor.eternalFurnace$getCookingTotalTime() == 180,
+                            "Hellfire did not scale the 100-tick recipe to 180 ticks");
+                    furnace.setItem(0, new ItemStack(Items.RAW_IRON));
+                    helper.assertTrue(accessor.eternalFurnace$getCookingTotalTime() == 200,
+                            "Changing input did not select the new recipe's vanilla time");
+                    helper.assertTrue(accessor.eternalFurnace$getCookingTimer() == 0,
+                            "Vanilla progress was incorrectly carried into a different recipe");
+                })
+                .thenWaitUntil(() -> helper.assertTrue(accessor.eternalFurnace$getCookingTimer() > 0,
+                        "The replacement recipe did not start from fresh progress"))
+                .thenExecute(() -> {
+                    helper.assertTrue(accessor.eternalFurnace$getCookingTotalTime() == 360,
+                            "Hellfire did not scale the replacement 200-tick recipe to 360 ticks");
+                    helper.assertTrue(accessor.eternalFurnace$getCookingTimer() == 1,
+                            "The replacement recipe carried stale progress into its first cooking tick");
+                })
+                .thenWaitUntil(() -> {
+                    helper.assertTrue(furnace.getItem(0).isEmpty(), "Replacement input was not consumed");
+                    helper.assertTrue(furnace.getItem(2).is(Items.IRON_INGOT) && furnace.getItem(2).getCount() == 1,
+                            "Switching recipes produced a stale or duplicated result");
+                })
+                .thenSucceed();
     }
 
     private static void multipleFurnacesAreIndependent(GameTestHelper helper) {
@@ -409,18 +427,23 @@ public final class ModGameTests {
                 helper.getLevel().registryAccess()
         );
         helper.assertTrue(loaded instanceof FurnaceBlockEntity, "Saved furnace could not be loaded");
+        FurnaceBlockEntity reloaded = (FurnaceBlockEntity) loaded;
+        AbstractFurnaceAccessor reloadedAccessor = (AbstractFurnaceAccessor) reloaded;
+        // Check persisted values before Hellfire has a chance to recreate them.
+        helper.assertTrue(reloaded.getItem(0).is(Items.RAW_IRON), "Reload lost the furnace input");
+        helper.assertTrue(reloadedAccessor.eternalFurnace$getLitTotalTime() == HELLFIRE_BURN_TIME_TICKS,
+                "Reload lost the Hellfire marker");
+        helper.assertTrue(reloadedAccessor.eternalFurnace$getCookingTotalTime() == 360, "Reload lost the slowed cook time");
+        helper.assertTrue(reloadedAccessor.eternalFurnace$getCookingTimer() == 90, "Reload lost cooking progress");
         helper.getLevel().removeBlockEntity(absolutePos);
         helper.getLevel().setBlockEntity(loaded);
 
-        helper.runAtTickTime(3, () -> {
-            FurnaceBlockEntity reloaded = helper.getBlockEntity(FURNACE_POS, FurnaceBlockEntity.class);
-            AbstractFurnaceAccessor reloadedAccessor = (AbstractFurnaceAccessor) reloaded;
+        helper.succeedWhen(() -> {
+            helper.assertTrue(reloadedAccessor.eternalFurnace$getCookingTimer() > 90, "Reloaded furnace did not resume work");
             helper.assertTrue(reloaded.getItem(0).is(Items.RAW_IRON), "Reload lost the furnace input");
             helper.assertTrue(reloadedAccessor.eternalFurnace$getLitTotalTime() == HELLFIRE_BURN_TIME_TICKS,
                     "Reload lost the Hellfire marker");
             helper.assertTrue(reloadedAccessor.eternalFurnace$getCookingTotalTime() == 360, "Reload lost the slowed cook time");
-            helper.assertTrue(reloadedAccessor.eternalFurnace$getCookingTimer() > 90, "Reloaded furnace did not resume work");
-            helper.succeed();
         });
     }
 
@@ -434,13 +457,12 @@ public final class ModGameTests {
                 player
         );
 
-        helper.runAtTickTime(5, () -> {
+        helper.succeedWhen(() -> {
             helper.assertTrue(menu.isLit(), "FurnaceMenu did not expose the Hellfire flame as lit");
             helper.assertTrue(menu.getLitProgress() > 0.0F,
                     "FurnaceMenu exposed zero flame height while Hellfire was working");
             helper.assertTrue(furnace.getItem(1).isEmpty(),
                     "GUI flame test unexpectedly used a fuel item");
-            helper.succeed();
         });
     }
 
@@ -519,10 +541,9 @@ public final class ModGameTests {
         SmokerBlockEntity smoker = helper.getBlockEntity(FURNACE_POS, SmokerBlockEntity.class);
         smoker.setItem(0, new ItemStack(Items.BEEF));
 
-        helper.runAtTickTime(5, () -> {
+        checkAfterIdleTick(helper, smoker, () -> {
             helper.assertFalse(helper.getBlockState(FURNACE_POS).getValue(AbstractFurnaceBlock.LIT), "Hellfire affected a smoker");
             helper.assertTrue(smoker.getItem(2).isEmpty(), "Smoker produced output without fuel");
-            helper.succeed();
         });
     }
 
@@ -532,11 +553,22 @@ public final class ModGameTests {
         BlastFurnaceBlockEntity blastFurnace = helper.getBlockEntity(FURNACE_POS, BlastFurnaceBlockEntity.class);
         blastFurnace.setItem(0, new ItemStack(Items.RAW_IRON));
 
-        helper.runAtTickTime(5, () -> {
+        checkAfterIdleTick(helper, blastFurnace, () -> {
             helper.assertFalse(helper.getBlockState(FURNACE_POS).getValue(AbstractFurnaceBlock.LIT),
                     "Hellfire affected a blast furnace");
             helper.assertTrue(blastFurnace.getItem(2).isEmpty(), "Blast furnace produced output without fuel");
-            helper.succeed();
+        });
+    }
+
+    private static void checkAfterIdleTick(GameTestHelper helper, AbstractFurnaceBlockEntity furnace, Runnable assertions) {
+        AbstractFurnaceAccessor accessor = (AbstractFurnaceAccessor) furnace;
+        // An unheated vanilla furnace clears this sentinel on its first serverTick.
+        // A negative test must not pass merely because its initial state is still untouched.
+        accessor.eternalFurnace$setCookingTimer(1);
+        helper.onEachTick(assertions);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(accessor.eternalFurnace$getCookingTimer() == 0, "Idle furnace has not ticked yet");
+            assertions.run();
         });
     }
 
