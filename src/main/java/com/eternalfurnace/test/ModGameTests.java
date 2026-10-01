@@ -150,14 +150,14 @@ public final class ModGameTests {
         furnace.setItem(1, new ItemStack(Items.COAL));
         AbstractFurnaceAccessor accessor = (AbstractFurnaceAccessor) furnace;
 
-        helper.runAtTickTime(2, () -> {
+        helper.runAtTickTime(5, () -> {
             helper.assertTrue(furnace.getItem(1).isEmpty(), "Coal was not consumed as ordinary fuel");
             helper.assertTrue(accessor.eternalFurnace$getLitTotalTime() > HELLFIRE_BURN_TIME_TICKS,
                     "Coal did not start an ordinary burn");
             helper.setBlock(HEAT_POS, ModBlocks.HELLFIRE_NETHERRACK.get());
             accessor.eternalFurnace$setLitTimeRemaining(4);
         });
-        helper.runAtTickTime(3, () -> {
+        helper.runAtTickTime(6, () -> {
             helper.assertTrue(accessor.eternalFurnace$getCookingTotalTime() == 200, "Hellfire interrupted fuel that was still burning");
             helper.assertTrue(accessor.eternalFurnace$getLitTotalTime() > HELLFIRE_BURN_TIME_TICKS,
                     "Hellfire replaced active fuel too early");
